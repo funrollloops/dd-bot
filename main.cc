@@ -19,8 +19,13 @@ struct CLI {
 
 // Attached peripherals, with configuration.
 TimedOutput<OutputPinB<5>> builtin_led;
+OutputPinD<4> ain1;
+OutputPinD<5> ain2;
+OutputPinD<6> apwm;
 
-struct __attribute__((packed)) PosPair { int16_t first, second; };
+OutputPinD<7> bin1;
+OutputPinB<0> bin2;
+OutputPinB<1> bpwm;
 
 EMPTY_INTERRUPT(BADISR_vect)
 
@@ -29,14 +34,26 @@ EMPTY_INTERRUPT(BADISR_vect)
 static int16_t max_flash = 100;
 static int16_t flash = 0;
 
+static int16_t second = 0;
+static int8_t which;
+
 ISR(TIMER2_OVF_vect, ISR_NAKED) {
   TCNT2 = TIMER2_INITIAL;
   builtin_led.tick();
 
   if (flash-- == 0) {
-    builtin_led.set_ticks(max_flash);
     max_flash <<= 1;
     flash = max_flash;
+  }
+
+  if (++second == 1000) {
+    builtin_led.set_ticks(500);
+    second = 0;
+    ++which;
+    ain1 = which & 1;
+    ain2 = which & 2;
+    bin1 = which & 4;
+    bin2 = which & 8;
   }
   RETI;
 }
@@ -63,6 +80,15 @@ void setup() {
   // Put status register into SPDR on reset to help debug.
   SPDR = MCUSR;
   MCUSR = 0;
+
+  apwm.on();
+  bpwm.on();
+
+  ain1.on();
+  ain2.off();
+
+  bin1.on();
+  bin2.off();
   sei(); // Enable interrups.
 }
 

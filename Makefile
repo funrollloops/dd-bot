@@ -9,7 +9,7 @@
 
 GCC_MCU        = atmega328p
 AVRDUDE_DEVICE = m328p
-CLOCK          = 8000000
+CLOCK          = 16000000u
 TTY            = /dev/ttyUSB*
 #PROGRAMMER     = -C +avrdude.conf -c pi_spi -P /dev/spidev0.0 -b 200000
 PROGRAMMER     = -carduino -P $(TTY) -b57600
