@@ -1,10 +1,9 @@
 #include <avr/cpufunc.h>
-#include <avr/io.h>
 #include <avr/interrupt.h>
-#include <avr/sleep.h>
-#include <stdio.h>
+#include <avr/io.h>
 
 #include "output_pin.h"
+#include "tb6612.h"
 
 #define CLOCK_RATE F_CPU
 #define TIMER2_PRESCALER 64
@@ -19,41 +18,46 @@ struct CLI {
 
 // Attached peripherals, with configuration.
 TimedOutput<OutputPinB<5>> builtin_led;
-OutputPinD<4> ain1;
-OutputPinD<5> ain2;
-OutputPinD<6> apwm;
-
-OutputPinD<7> bin1;
-OutputPinB<0> bin2;
-OutputPinB<1> bpwm;
+TB6612<OutputPinD<4>, OutputPinD<5>, OutputPinD<6>> motor_a;
+TB6612<OutputPinD<7>, OutputPinB<0>, OutputPinB<1>> motor_b;
 
 EMPTY_INTERRUPT(BADISR_vect)
 
 #define RETI do { asm volatile("reti"); __builtin_unreachable(); } while (0)
 
-static int16_t max_flash = 100;
-static int16_t flash = 0;
-
 static int16_t second = 0;
-static int8_t which;
+static int8_t which = 0;
 
 ISR(TIMER2_OVF_vect, ISR_NAKED) {
   TCNT2 = TIMER2_INITIAL;
   builtin_led.tick();
 
-  if (flash-- == 0) {
-    max_flash <<= 1;
-    flash = max_flash;
-  }
-
   if (++second == 1000) {
     builtin_led.set_ticks(500);
     second = 0;
     ++which;
-    ain1 = which & 1;
-    ain2 = which & 2;
-    bin1 = which & 4;
-    bin2 = which & 8;
+
+    switch (which & 0x3) {
+      case 0:
+        motor_a.forward();
+        motor_b.forward();
+        break;
+
+      case 1:
+        motor_a.stop();
+        motor_b.stop();
+        break;
+
+      case 2:
+        motor_a.backward();
+        motor_b.backward();
+        break;
+
+      case 3:
+        motor_a.short_brake();
+        motor_b.short_brake();
+        break;
+    }
   }
   RETI;
 }
@@ -65,30 +69,13 @@ void setup() {
   _NOP();        // Ensure instructions are not re-ordered.
   CLKPR = 0x00;  // Set divisor to 1.
 
-  // Configure TIMER2 to interrupt when TCNT2 reaches UINT8_MAX.
+  // Configure TIMER2 to interrupt TIMER2_INTERRUPTS_PER_SEC.
   TCCR2A = 0;
   TCCR2B = 0;
-  TCCR2B |= _BV(CS22);  // set prescaler to 64.
-  TCNT2 = TIMER2_INITIAL;
-  TIMSK2 |= _BV(TOIE2);
+  TCCR2B |= _BV(CS22);  // prescaler=64 (increment TCNT2 every 64 cycles).
+  TCNT2 = TIMER2_INITIAL;  // Interrupt triggered when this reached UINT8_MAX.
+  TIMSK2 |= _BV(TOIE2);  // Enable interrupts for timer2.
 
-  // Enable SPI for read and write.
-  DDRB |= _BV(4);  // Set MISO pin to output.
-  SPCR |= _BV(SPE);  // Enable SPI in slave mode.
-  SPCR |= _BV(SPIE);  // Enable SPI interrupts.
-
-  // Put status register into SPDR on reset to help debug.
-  SPDR = MCUSR;
-  MCUSR = 0;
-
-  apwm.on();
-  bpwm.on();
-
-  ain1.on();
-  ain2.off();
-
-  bin1.on();
-  bin2.off();
   sei(); // Enable interrups.
 }
 
